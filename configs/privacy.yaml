@@ -1,0 +1,4 @@
+detector_version: "phase-0-placeholder"
+default_mode: local_only
+max_upload_bytes: 10485760
+max_pdf_pages: 100

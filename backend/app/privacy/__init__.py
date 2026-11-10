@@ -1,0 +1,1 @@
+"""Fail-closed privacy controls."""

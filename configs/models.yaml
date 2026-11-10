@@ -1,0 +1,43 @@
+# Model registry inputs. Fill in the real IDs/prices AFTER the Phase 0 pilots:
+#   python scripts/profile_local.py --model <ollama-tag> ...   (GPU machine, see SETUP.md)
+#   python scripts/price_pilot.py --list --max-input-price 1.0  then --cheap-model/--strong-model
+# `provider_model` is the id the provider expects (Ollama tag / OpenRouter model id).
+# The live evaluation harness refuses to run while a provider_model is null.
+local:
+  - slug: local-pilot
+    kind: local
+    provider: ollama
+    provider_model: null            # e.g. an Ollama tag chosen from the hardware pilot
+    endpoint: http://localhost:11434
+    context_limit: 8192
+    max_output: 1024
+    tokenizer: fallback
+    quant: 4bit
+    min_ram_gb: 16
+    min_vram_gb: 8
+    enabled: true
+cloud:
+  - slug: cloud-cheap-pilot
+    kind: cloud
+    tier: cheap
+    provider: openrouter
+    provider_model: null            # OpenRouter model id for the cheap option
+    endpoint: https://openrouter.ai/api/v1
+    context_limit: 8192
+    max_output: 1024
+    tokenizer: fallback
+    price: {input_per_mtok: null, output_per_mtok: null, captured_at: null}
+    price_snapshot_date: null
+    enabled: false
+  - slug: cloud-strong-pilot
+    kind: cloud
+    tier: strong
+    provider: openrouter
+    provider_model: null            # OpenRouter model id for the strong option
+    endpoint: https://openrouter.ai/api/v1
+    context_limit: 8192
+    max_output: 1024
+    tokenizer: fallback
+    price: {input_per_mtok: null, output_per_mtok: null, captured_at: null}
+    price_snapshot_date: null
+    enabled: false

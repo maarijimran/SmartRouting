@@ -1,0 +1,7 @@
+Alder7: A Study of Graph Partitioning
+
+Introduction
+This paper studies graph partitioning. We introduce Alder7, a new approach to graph partitioning.
+
+Results
+Alder7 achieves 88.4% accuracy on CorpusA7, compared with 52.1% for the strongest baseline.

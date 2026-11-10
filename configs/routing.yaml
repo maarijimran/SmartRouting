@@ -1,0 +1,35 @@
+default_policy: fixed_rules
+
+# Fixed-rule baseline (docs/01). Rules are evaluated in this order and the ID of
+# the rule that fired is returned and shown in the UI.
+rules:
+  local_context_tokens: 4096      # r2: prompts above this need a cloud model
+  simple_tasks: [definition, short_explanation, explain]
+  simple_max_evidence_chunks: 2   # r3: short task + focused evidence -> local
+  spread_min_chunks: 3            # r4: evidence spread across >= N chunks -> strong cloud
+  order:
+    - label_forbids_cloud
+    - context_exceeds_local
+    - simple_task_local
+    - distributed_evidence_strong
+    - cost_preference_local
+    - default_cheap_cloud
+
+bandit:
+  initial_epsilon: 0.10
+  final_epsilon: 0.02
+  decay_decisions: 1000
+  ridge_lambda: 1.0
+  update_every: 50          # refit after this many scored outcomes
+  cold_start_min: 50        # fixed rules serve until each model has this many scored examples
+  window: null              # sliding window of scored outcomes per model (null = all)
+  shadow_mode: true         # log the bandit's counterfactual choice while rules serve
+
+rollback:
+  reward_drop_delta: 0.05   # auto rollback if window mean reward < rules baseline - delta
+  error_rate_max: 0.30
+  min_window: 30
+
+routing:
+  overhead_target_ms: 500
+  reserved_output_tokens: 512

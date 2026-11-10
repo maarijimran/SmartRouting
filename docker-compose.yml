@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: smartroute
+      POSTGRES_USER: smartroute
+      POSTGRES_PASSWORD: smartroute
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Optional: only starts with `docker compose --profile local-llm up`.
+  # Skip it on machines without a capable GPU and set OLLAMA_URL to a remote host.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://smartroute:smartroute@db:5432/smartroute
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      FRONTEND_ORIGIN: http://localhost:3000
+      PRIVACY_GATE_REQUIRED: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  ollama_data:

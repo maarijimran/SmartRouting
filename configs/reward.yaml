@@ -1,0 +1,17 @@
+# Reward R = w_q*Q + w_c*(1 - min(C/C_ref, 1)) + w_l*(1 - min(L/L_ref, 1))   (docs/05)
+# Failed / empty / timeout / truncated attempts get R = -1.
+weights:
+  human: 0.7        # Q = 0.7*H + 0.3*A when both exist
+  automatic: 0.3
+  quality: 0.5
+  cost: 0.3
+  latency: 0.2
+
+# PROVISIONAL reference values so the code path works before the pricing pilot.
+# They must be replaced by pilot-derived numbers and then frozen BEFORE the final
+# test (set frozen: true). The evaluation harness refuses to run final-test splits
+# while frozen is false.
+c_ref_usd: 0.01
+l_ref_ms: 10000
+frozen: false
+source: "provisional-defaults (replace after scripts/price_pilot.py)"
