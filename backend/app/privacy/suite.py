@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 
 from app.privacy.consent import Consent
-from app.privacy.detector import PrivacyScanner
+from app.privacy.detector import PrivacyScanner, default_scanner
 from app.privacy.gate import check_outbound
 from app.privacy.policy import InstitutionalPolicy
 
@@ -20,7 +20,7 @@ def _failing_detector(_: str) -> list:
 
 def _gate(payload: bytes, **kw):
     base = dict(
-        scanner=PrivacyScanner(),
+        scanner=default_scanner(),  # the suite checks the detector that actually serves
         mode="cloud_allowed",
         label="public",
         user_id="user-1",

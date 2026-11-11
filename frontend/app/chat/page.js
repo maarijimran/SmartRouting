@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ConsentDialog from "../../components/ConsentDialog";
 import FeedbackWidget from "../../components/FeedbackWidget";
 import RoutePanel from "../../components/RoutePanel";
-import { api, streamChat } from "../../lib/api";
+import SensitiveReview from "../../components/SensitiveReview";
+import { api, entityLabel, streamChat } from "../../lib/api";
 import { useRequireUser } from "../../lib/auth";
 
 const LABELS = ["public", "internal", "confidential"];
@@ -32,6 +33,7 @@ export default function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [consent, setConsent] = useState(null);
+  const [review, setReview] = useState(null); // sensitive-content review awaiting the user's choice
   const [now, setNow] = useState(Date.now());
   const abortRef = useRef(null);
   const fileRef = useRef(null);
@@ -130,7 +132,8 @@ export default function ChatPage() {
     setDocs(await api(`/api/v1/sessions/${session.id}/documents`));
   }
 
-  async function send(text) {
+  // `choice` answers a sensitive-content review: "local" | "cloud" | undefined (not asked yet)
+  async function send(text, choice) {
     if (!session || !text.trim() || busy) return;
     setBusy(true);
     setError("");
@@ -145,9 +148,13 @@ export default function ChatPage() {
     try {
       await streamChat(
         session.id,
-        { prompt: text, cost_preference: costPref },
+        { prompt: text, cost_preference: costPref, ...(choice ? { sensitive_choice: choice } : {}) },
         (name, data) => {
           if (name === "context") update({ evidence: data.evidence });
+          else if (name === "review") {
+            update({ route: null, review: data, abstained: true });
+            setReview(data);
+          }
           else if (name === "compression_notice") update({ compression: data });
           else if (name === "route")
             update({
@@ -236,7 +243,27 @@ export default function ChatPage() {
       },
     });
     setConsent(null);
-    await send(live?.prompt || prompt); // identical payload, so the scoped consent now applies
+    // identical payload, so the scoped consent now applies
+    await send(live?.prompt || prompt, "cloud");
+  }
+
+  async function reviewChooseLocal() {
+    setReview(null);
+    await send(live?.prompt || prompt, "local");
+  }
+
+  async function reviewChooseCloud(option) {
+    await api("/api/v1/consents", {
+      method: "POST",
+      body: {
+        session_id: session.id,
+        destination_model_id: option.model,
+        payload_hash: option.payload_hash,
+        expires_minutes: 60,
+      },
+    });
+    setReview(null);
+    await send(live?.prompt || prompt, "cloud");
   }
 
   const expires = session ? new Date(session.expires_at).getTime() : 0;
@@ -347,7 +374,22 @@ export default function ChatPage() {
                   <div className="msg assistant">
                     <div className="who">assistant</div>
                     {live.content || (busy ? "…" : "")}
-                    <RoutePanel route={liveToRoute(live)} onConsent={(c) => setConsent(c)} />
+                    {live.review ? (
+                      <div className="card" role="status">
+                        <p>
+                          <strong>Waiting for your decision.</strong> Sensitive content was found
+                          {live.review.findings?.length
+                            ? `: ${live.review.findings
+                                .map((f) => `${entityLabel(f.entity_type)} ×${f.count}`)
+                                .join(", ")}`
+                            : ` (label: ${live.review.label})`}
+                          . Nothing has been sent.
+                        </p>
+                        <button onClick={() => setReview(live.review)}>Review and choose…</button>
+                      </div>
+                    ) : (
+                      <RoutePanel route={liveToRoute(live)} onConsent={(c) => setConsent(c)} />
+                    )}
                     {live.failed && <p className="error">{live.failed}</p>}
                     {live.route?.event_id && live.route.status === "succeeded" && (
                       <FeedbackWidget eventId={live.route.event_id} />
@@ -405,6 +447,12 @@ export default function ChatPage() {
         label={session?.label}
         onGrant={grantConsent}
         onCancel={() => setConsent(null)}
+      />
+      <SensitiveReview
+        review={review}
+        onLocal={reviewChooseLocal}
+        onCloud={reviewChooseCloud}
+        onCancel={() => setReview(null)}
       />
     </div>
   );

@@ -32,7 +32,11 @@ password-change, and minimal frontend auth screens are included. Provider
 connection testing is an explicit stub until Phase 2's egress adapter exists.
 
 ## Phase 5–11 implementation notes (what actually shipped vs the original stack)
-- **Not used / deferred:** `presidio-analyzer` and spaCy (detector is regex + Luhn only);
+- **PII detector:** `presidio-analyzer` + spaCy were replaced by the local transformer
+  iiiorg/piiranha-v1 (`torch` + `transformers`, optional extra `.[pii]`, selected with
+  `PII_DETECTOR=piiranha`) combined with the regex/Luhn recognisers. Regex-only stays the default
+  for CI. ~12 ms per short text, ~54 ms per 1,800 words on an RTX 4000 Ada (fp16).
+- **Not used / deferred:** `presidio-analyzer` and spaCy (see above);
   `tiktoken` (token counts use a whitespace estimate with a 1.1 safety factor for unknown
   tokenizers); scikit-learn / pandas (ridge is implemented in NumPy); Recharts (charts are inline
   SVG to avoid an unbuildable-here dependency); Tailwind (plain CSS).

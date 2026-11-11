@@ -161,6 +161,32 @@ There are two ways to run it. Pick one.
 
 Cloud models need no GPU, so the laptop can test them any time; see below.
 
+## Local PII detection model (piiranha)
+
+The privacy scanner can use the local transformer iiiorg/piiranha-v1 alongside the regex
+recognisers. It runs on the GPU (≈0.6 GB VRAM in fp16) and never sends text anywhere.
+
+1. Download the model (safetensors + tokenizer files) into a folder, e.g. `../Pii detection model`.
+2. Install the extras into the venv (CUDA build of torch first):
+
+   ```powershell
+   python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+   python -m pip install -e ".[pii]"
+   ```
+
+3. In `.env`: `PII_DETECTOR=piiranha` and `PII_MODEL_PATH=<absolute path to the model folder>`.
+   Optional: `PII_THRESHOLD` (default 0.5), `PII_IGNORE_TYPES` (comma-separated, e.g.
+   `address,person_name`), `PII_DEVICE` (`auto`|`cuda`|`cpu`).
+4. The backend loads the model at startup. If it cannot (wrong path, missing torch), every scan
+   reports a scanner error and **cloud stays blocked** (fail closed) until it is fixed.
+
+Tests always use the regex detector; `backend/tests/test_pii_model.py` additionally exercises the
+real model when the weights are found (`PII_TEST_MODEL_PATH` or `../Pii detection model`).
+
+When a turn contains sensitive content and cloud is allowed, the chat shows a **review dialog**
+(what was found, where, redacted preview): answer locally, or consent to send this exact payload
+to one cloud model.
+
 ## Testing a cloud model with a free API key
 
 `scripts/cloud_smoke.py` sends one synthetic prompt to any OpenAI-compatible

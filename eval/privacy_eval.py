@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from app.privacy.detector import PrivacyScanner
+from app.privacy.detector import default_scanner
 from app.privacy.gate import check_outbound
 
 from eval.common import DATASETS, read_jsonl
@@ -12,7 +12,7 @@ from eval.common import DATASETS, read_jsonl
 
 def privacy_eval(dataset_name: str) -> dict:
     cases = read_jsonl(DATASETS / dataset_name / "privacy.jsonl")
-    scanner = PrivacyScanner()
+    scanner = default_scanner()  # PII_DETECTOR selects patterns or piiranha
     tp = fp = fn = tn = 0
     unauthorised = 0
     missed: dict[str, int] = {}

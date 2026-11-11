@@ -17,6 +17,10 @@ PATTERNS = {
     "student_id": re.compile(r"(?<![A-Z0-9])\d{2}K-\d{4}(?![A-Z0-9])", re.I),
     "iban": re.compile(r"(?<![A-Z0-9])PK\d{2}[A-Z]{4}\d{16}(?![A-Z0-9])", re.I),
     "card": re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)"),
+    # Passport numbers (1-2 letters + 6-8 digits, e.g. PK "AB1234567") are only flagged near
+    # the word "passport", so ordinary codes are not. Group 1 is the reported span. The PII
+    # model has no passport label and misses these.
+    "passport": re.compile(r"\b(?i:passport)\b[^\n]{0,30}?(?<![A-Z0-9])([A-Z]{1,2}\d{6,8})(?!\d)"),
 }
 
 
@@ -37,5 +41,6 @@ def find_pattern_entities(text: str) -> list[PatternFinding]:
         for match in pattern.finditer(text):
             if entity_type == "card" and not _luhn(match.group()):
                 continue
-            findings.append(PatternFinding(entity_type, match.start(), match.end()))
+            start, end = match.span(1) if pattern.groups else match.span()
+            findings.append(PatternFinding(entity_type, start, end))
     return findings

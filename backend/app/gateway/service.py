@@ -41,7 +41,7 @@ from app.documents.retrieve import Retriever
 from app.gateway.factory import BlockedAdapter, build_cloud_adapter, build_local_adapter
 from app.gateway.pipeline import PipelineCandidate, PipelineRequest
 from app.privacy.consent import Consent
-from app.privacy.detector import PrivacyScanner
+from app.privacy.detector import PrivacyScanner, default_scanner
 from app.privacy.gate import check_outbound, redact, serialize_payload
 from app.privacy.labels import highest_label
 from app.privacy.policy import InstitutionalPolicy
@@ -58,6 +58,10 @@ class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=100_000)
     task: str | None = None
     cost_preference: Literal["lowest", "balanced", "best"] = "balanced"
+    # The user's answer to a sensitive-content review: "local" removes every cloud candidate,
+    # "cloud" removes the local candidates (cloud still needs valid scoped consent). Either
+    # only narrows the eligible set; it can never make an ineligible model eligible.
+    sensitive_choice: Literal["local", "cloud"] | None = None
 
 
 @dataclass
@@ -70,6 +74,10 @@ class Prepared:
     compression: CompressionNotice | None
     connection_by_model: dict[str, str] = field(default_factory=dict)
     local_slugs: set[str] = field(default_factory=set)
+    detector_version: str = "patterns-v1"
+    # Set when sensitive content would need consent for cloud and the user has not chosen yet:
+    # the turn stops before routing and the findings are shown so the user can decide.
+    review: dict | None = None
 
 
 def _summarize(turns: list[dict[str, str]]) -> str:
@@ -193,7 +201,7 @@ def prepare_turn(
     settings: Settings,
     scanner: PrivacyScanner | None = None,
 ) -> Prepared:
-    scanner = scanner or PrivacyScanner()
+    scanner = scanner or default_scanner()
     cfg = routing_config().get("routing", {})
     reserved_output = int(cfg.get("reserved_output_tokens", 512))
 
@@ -263,6 +271,12 @@ def prepare_turn(
     local_slugs: set[str] = set()
     fallback_input = 0
     for model in models:
+        if payload.sensitive_choice == "local" and model.kind == "cloud":
+            pre_removed.append({"model": model.slug, "reason": "user_chose_local"})
+            continue
+        if payload.sensitive_choice == "cloud" and model.kind == "local":
+            pre_removed.append({"model": model.slug, "reason": "user_chose_cloud"})
+            continue
         spec = _spec(model)
         context = build_context(
             payload.prompt,
@@ -384,6 +398,33 @@ def prepare_turn(
         history_turns=len(history),
         stats=stats,
     )
+    finding_rows = [
+        {"scope": scope, "entity_type": kind, "count": count}
+        for (scope, kind), count in sorted(findings.items())
+    ]
+    review = None
+    needs_consent = [
+        c
+        for c in candidates
+        if c.model.kind == "cloud" and c.gate is not None and c.gate.reason == "consent_required"
+    ]
+    consented = any(c.model.kind == "cloud" and c.gate and c.gate.allowed for c in candidates)
+    if payload.sensitive_choice is None and needs_consent and not consented:
+        review = {
+            "label": effective_label,
+            # what was found and where (types + counts only; the payload scope repeats them)
+            "findings": [row for row in finding_rows if row["scope"] != "payload"],
+            "cloud_options": [
+                {
+                    "model": c.model.slug,
+                    "tier": c.tier,
+                    "payload_hash": c.gate.payload_hash,
+                    "preview": c.meta.get("preview", ""),
+                }
+                for c in needs_consent
+            ],
+            "local_models": sorted(local_slugs),
+        }
     request = PipelineRequest(
         prompt=payload.prompt,
         messages=_clean([{"role": "user", "content": payload.prompt}]),
@@ -395,10 +436,7 @@ def prepare_turn(
         request=request,
         candidates=candidates,
         effective_label=effective_label,
-        findings=[
-            {"scope": scope, "entity_type": kind, "count": count}
-            for (scope, kind), count in sorted(findings.items())
-        ],
+        findings=finding_rows,
         evidence_refs=[
             {"chunk_id": e.chunk.id, "page": e.chunk.page, "score": round(e.score, 3)}
             for e in evidence
@@ -406,6 +444,8 @@ def prepare_turn(
         compression=compression,
         connection_by_model=connection_by_model,
         local_slugs=local_slugs,
+        detector_version=scanner.version,
+        review=review,
     )
 
 
@@ -517,7 +557,9 @@ def persist_turn(
                 )
             )
     for finding in prepared.findings:
-        db.add(PrivacyFinding(event_id=event.id, detector_version="patterns-v1", **finding))
+        db.add(
+            PrivacyFinding(event_id=event.id, detector_version=prepared.detector_version, **finding)
+        )
     if answer:
         db.add(
             Message(

@@ -239,6 +239,18 @@ def chat(session_id: str, payload: ChatRequest, user: User, db: Db) -> Streaming
                 "findings": prepared.findings,
             },
         )
+        if prepared.review is not None:
+            # Stop before routing: show what was found and let the user choose local or cloud.
+            # Like an abstained turn it leaves no history, so the user's retry serialises to
+            # the identical payload that a scoped consent is bound to. Nothing was dispatched.
+            db.delete(user_message)
+            db.commit()
+            local_ok = any(
+                c.model.kind == "local" and c.health is not None and c.health.ok
+                for c in candidates
+            )
+            yield _sse("review", {**prepared.review, "local_available": local_ok})
+            return
         if prepared.compression is not None:
             yield _sse(
                 "compression_notice",

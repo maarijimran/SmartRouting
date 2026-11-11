@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,6 +12,7 @@ from app.documents.router import router as documents_router
 from app.feedback.router import router as feedback_router
 from app.gateway.router import router as gateway_router
 from app.keys.router import router as keys_router
+from app.privacy.detector import default_scanner
 from app.privacy.router import router as privacy_router
 from app.registry.router import router as registry_router
 
@@ -51,6 +54,14 @@ app.include_router(admin_router)
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    # Load the PII model now so the first chat turn is not slow. A failure is logged and
+    # every later scan reports a scanner error, which blocks cloud (fail closed).
+    try:
+        default_scanner().warm_up()
+    except Exception:
+        logging.getLogger("smartroute.privacy").exception(
+            "PII detector failed to load; cloud models stay blocked until it works"
+        )
 
 
 @app.get("/healthz", tags=["health"])

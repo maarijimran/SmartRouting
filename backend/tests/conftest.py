@@ -6,6 +6,9 @@ from pathlib import Path
 os.environ.setdefault("FAKE_PROVIDERS", "true")
 os.environ.setdefault("KEY_VAULT_MASTER_KEY", base64.b64encode(b"t" * 32).decode())
 os.environ.setdefault("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long")
+# Unit tests use the regex detector even if a local .env enables the PII model; the model
+# itself is covered by test_pii_model.py (skipped when the weights are not present).
+os.environ["PII_DETECTOR"] = "patterns"
 
 
 def pytest_configure(config) -> None:

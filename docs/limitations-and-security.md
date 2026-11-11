@@ -1,10 +1,16 @@
 # Limitations, ethics and security checklist
 
 ## Limitations (state these in the report; do not claim guarantees)
-- **Privacy detection is pattern-based** (email, PK phone, CNIC, student ID, IBAN, Luhn-valid card
-  numbers). It does not detect names, implicit confidentiality or paraphrased identifiers; the
-  Presidio/spaCy layer in the original stack is not implemented. Labels and local-only mode remain
-  essential. Detector misses and gate passes are reported separately.
+- **Privacy detection = regex patterns + an optional local transformer** (`PII_DETECTOR=piiranha`:
+  iiiorg/piiranha-v1, mDeBERTa-v3, 17 PII types, run on the local GPU). Regex covers email, PK
+  phone, CNIC, student ID, IBAN, Luhn-valid cards and keyword-anchored passport numbers; the model
+  adds names, addresses, account/ID numbers, passwords, usernames and dates of birth. It does not
+  detect implicit confidentiality or paraphrased identifiers, so labels and local-only mode remain
+  essential. Known false positives on academic text: cited author names (`Vaswani et al.`), places
+  (`Karachi`) and some technical tokens (`BM25` → address). They never leak anything: the user
+  sees the findings in a review step and chooses local or consented cloud. Detector misses and
+  gate passes are reported separately. Model licence: CC-BY-NC-ND-4.0 (non-commercial, used
+  unmodified).
 - **Hardware dependence:** the local model, its context limit and latency depend on the target GPU;
   none of those numbers exist yet (pilots not run).
 - **Small, English, digital-PDF/TXT academic data.** No OCR, multimodal or tool use.

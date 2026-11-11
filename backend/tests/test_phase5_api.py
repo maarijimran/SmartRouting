@@ -84,10 +84,12 @@ def test_pii_without_consent_abstains_then_scoped_consent_allows():
             connect_cloud(c, user, ids)
             sid = new_session(c, user, mode="cloud_allowed")
             first = chat(c, user, sid, f"What is entropy? {CANARY}")
-            abstain = last(first, "abstain")
-            assert types(first)[-1] == "abstain"
+            review = last(first, "review")
+            assert types(first)[-1] == "review"  # findings shown first; the user decides
             assert spy == []  # nothing sent to the cloud sink
-            needed = {n["model"]: n for n in abstain["consent_needed"]}
+            assert {"scope": "prompt", "entity_type": "email", "count": 1} in review["findings"]
+            assert review["local_available"] is False
+            needed = {n["model"]: n for n in review["cloud_options"]}
             assert "[EMAIL]" in needed["cloud-cheap-demo"]["preview"]
             assert CANARY.split()[-1] not in needed["cloud-cheap-demo"]["preview"]
             # consent for a different payload / model does not unlock
@@ -101,8 +103,9 @@ def test_pii_without_consent_abstains_then_scoped_consent_allows():
                 },
             )
             assert wrong.status_code == 201
-            again = chat(c, user, sid, f"What is entropy? {CANARY}")
-            assert types(again)[-1] == "abstain"
+            again = chat(c, user, sid, f"What is entropy? {CANARY}", sensitive_choice="cloud")
+            assert types(again)[-1] == "abstain"  # choosing cloud never bypasses consent
+            assert spy == []
             # exact scoped consent unlocks that model only
             ok = c.post(
                 "/api/v1/consents",
@@ -115,20 +118,87 @@ def test_pii_without_consent_abstains_then_scoped_consent_allows():
             )
             assert ok.status_code == 201
             # the retry is byte-identical (abstained turns leave no history) so consent applies
-            retry = chat(c, user, sid, f"What is entropy? {CANARY}")
+            retry = chat(c, user, sid, f"What is entropy? {CANARY}", sensitive_choice="cloud")
             assert last(retry, "route")["model"] == "cloud-cheap-demo"
             assert types(retry)[-1] == "done"
             assert len(spy) == 1  # exactly one payload reached the cloud sink
             sent = json.dumps(spy[0])
             assert "canary.person@example.test" in sent  # consented content, only for this model
-            strong = [
-                n
-                for n in last(first, "abstain")["consent_needed"]
-                if n["model"] == "cloud-strong-demo"
-            ]
-            assert strong  # the other model was NOT unlocked by this consent
+            removed = {r["model"]: r["reason"] for r in last(retry, "route")["removed"]}
+            assert removed["cloud-strong-demo"] == "consent_required"  # NOT unlocked
     finally:
         service.build_cloud_adapter = original
+
+
+def test_sensitive_review_lets_user_choose_local_or_cloud():
+    spy: list = []
+
+    class Spy(FakeCloudAdapter):
+        async def generate(self, messages, params):
+            spy.append(messages)
+            async for chunk in super().generate(messages, params):
+                yield chunk
+
+    original = service.build_cloud_adapter
+    service.build_cloud_adapter = lambda model, conn, settings: Spy()
+    try:
+        with client() as c:
+            user = make_user(c)
+            ids = seed_models({"local-demo", "cloud-cheap-demo", "cloud-strong-demo"})
+            connect_cloud(c, user, ids)
+            sid = new_session(c, user, mode="cloud_allowed")
+            prompt = f"Explain the method. {CANARY}"
+            review = last(chat(c, user, sid, prompt), "review")
+            assert review["local_available"] is True and review["local_models"] == ["local-demo"]
+            assert {o["model"] for o in review["cloud_options"]} == {
+                "cloud-cheap-demo",
+                "cloud-strong-demo",
+            }
+            # a review leaves no history, so the retry payload is byte-identical
+            assert c.get(f"/api/v1/sessions/{sid}/messages", headers=user["headers"]).json() == []
+
+            local = chat(c, user, sid, prompt, sensitive_choice="local")
+            route = last(local, "route")
+            assert route["model"] == "local-demo" and types(local)[-1] == "done"
+            assert {r["reason"] for r in route["removed"]} == {"user_chose_local"}
+            assert spy == []
+
+            sid2 = new_session(c, user, mode="cloud_allowed")
+            option = {
+                o["model"]: o for o in last(chat(c, user, sid2, prompt), "review")["cloud_options"]
+            }["cloud-strong-demo"]
+            c.post(
+                "/api/v1/consents",
+                headers=user["headers"],
+                json={
+                    "session_id": sid2,
+                    "destination_model_id": "cloud-strong-demo",
+                    "payload_hash": option["payload_hash"],
+                },
+            )
+            cloud = chat(c, user, sid2, prompt, sensitive_choice="cloud")
+            route = last(cloud, "route")
+            assert route["model"] == "cloud-strong-demo" and types(cloud)[-1] == "done"
+            removed = {r["model"]: r["reason"] for r in route["removed"]}
+            assert removed == {
+                "local-demo": "user_chose_cloud",
+                "cloud-cheap-demo": "consent_required",
+            }
+            assert len(spy) == 1
+    finally:
+        service.build_cloud_adapter = original
+
+
+def test_no_review_without_sensitive_content_or_in_local_only_mode():
+    with client() as c:
+        user = make_user(c)
+        ids = seed_models({"local-demo", "cloud-cheap-demo", "cloud-strong-demo"})
+        connect_cloud(c, user, ids)
+        public = chat(c, user, new_session(c, user, mode="cloud_allowed"), "Explain the method")
+        assert "review" not in types(public) and types(public)[-1] == "done"
+        local_only = chat(c, user, new_session(c, user), f"Explain. {CANARY}")
+        assert "review" not in types(local_only)
+        assert last(local_only, "route")["model"] == "local-demo"
 
 
 def test_abstain_when_no_model_available_is_actionable_and_persisted():
@@ -169,8 +239,12 @@ def test_confidential_label_blocks_cloud_without_entities():
         connect_cloud(c, user, ids)
         sid = new_session(c, user, mode="cloud_allowed", label="confidential")
         events = chat(c, user, sid, "Summarise nothing sensitive here")
-        assert types(events)[-1] == "abstain"
-        reasons = {r["reason"] for r in last(events, "abstain")["removed"]}
+        assert types(events)[-1] == "review"  # the label alone needs the user's decision
+        review = last(events, "review")
+        assert review["label"] == "confidential" and review["findings"] == []
+        chosen = chat(c, user, sid, "Summarise nothing sensitive here", sensitive_choice="cloud")
+        assert types(chosen)[-1] == "abstain"
+        reasons = {r["reason"] for r in last(chosen, "abstain")["removed"]}
         assert reasons == {"consent_required"}
 
 

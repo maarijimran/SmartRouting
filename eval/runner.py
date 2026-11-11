@@ -10,7 +10,7 @@ from app.documents.chunk import chunk_document
 from app.documents.parse import parse_document
 from app.documents.retrieve import Retriever
 from app.feedback.scoring import automatic_score
-from app.privacy.detector import PrivacyScanner
+from app.privacy.detector import default_scanner
 from app.privacy.gate import check_outbound, serialize_payload
 from app.registry.models import HealthState, ModelSpec, PriceSnapshot
 from app.routing.eligibility import eligible_candidates
@@ -20,7 +20,7 @@ from app.routing.reward import FAILURE_REWARD, RewardConfig, reward
 from eval.common import EvalItem, doc_text
 from eval.executor import ModelProfile, Result
 
-SCANNER = PrivacyScanner()
+SCANNER = default_scanner()
 RESERVED_OUTPUT = 512
 
 

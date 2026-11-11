@@ -43,22 +43,31 @@ test("register → key → models → upload → ask → route → abstain → c
   await expect(page.getByText("Estimated (before sending)")).toBeVisible();
   await expect(page.getByText("Measured (after)")).toBeVisible();
 
-  // With a healthy local model, confidential content simply routes locally. To see the blocked
-  // panel and consent flow, take the local model away (admin disables it), then go confidential.
+  // Sensitive content with cloud allowed: findings are shown first and the user decides.
+  await page.getByLabel("Allow cloud models").check();
+  await page.getByLabel("Your question").fill("Summarize the paper. Contact: student42@example.test");
+  await page.getByRole("button", { name: /Send/ }).click();
+  await expect(page.getByText("Sensitive content found — where should this go?")).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Email address" })).toBeVisible();
+  await expect(page.getByText("Redacted preview")).toBeVisible();
+  await page.getByRole("button", { name: /Answer locally/ }).click();
+  await expect(page.getByText("You chose local").first()).toBeAttached();
+
+  // Without a local model, a confidential label leaves only cloud-with-consent: the review
+  // dialog offers no local option, and cancelling leaves the turn unsent.
   await page.goto("/admin");
   await page.getByLabel("Enable local-demo").click(); // server-backed toggle: state follows the reload
   await expect(page.getByText("Updated.")).toBeVisible();
   await page.goto("/chat");
   await expect(page.getByText(/Session 1/)).toBeVisible();
-  await page.getByLabel("Allow cloud models").check();
   await page.getByLabel("Session label").selectOption("confidential");
   await page.getByLabel("Your question").fill("Summarize the paper please");
   await page.getByRole("button", { name: /Send/ }).click();
-  await expect(page.getByText("Blocked — no eligible model")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Review & consent to send to cloud-cheap-demo/ })).toBeVisible();
-  await page.getByRole("button", { name: /Review & consent to send to cloud-cheap-demo/ }).click();
-  await expect(page.getByText("Redacted preview")).toBeVisible();
-  await page.getByRole("button", { name: "Keep it local" }).click();
+  await expect(page.getByText("Sensitive content found — where should this go?")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Answer locally/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Send to cloud: cloud-cheap-demo/ })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByText("Waiting for your decision.")).toBeVisible();
 
   // feedback on the first answer
   await page.getByLabel("Session label").selectOption("public");

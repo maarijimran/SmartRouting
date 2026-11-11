@@ -164,9 +164,34 @@ export const REASONS = {
     fix: "Cloud is blocked for safety until the scanner works. Local models are unaffected.",
   },
   model_disabled: { label: "Model disabled", fix: "An admin has disabled this model." },
+  user_chose_local: { label: "You chose local", fix: "You kept this sensitive request on the local model." },
+  user_chose_cloud: { label: "You chose cloud", fix: "You chose to send this request to a cloud model." },
   policy_has_no_action: { label: "No action", fix: "No eligible model for this policy." },
 };
 
 export function reasonText(reason) {
   return REASONS[reason] || { label: reason, fix: "" };
 }
+
+// Privacy-scan entity types (regex + local PII model) -> readable names.
+const ENTITY_LABELS = {
+  email: "Email address",
+  pk_phone: "Phone number (PK)",
+  phone: "Phone number",
+  cnic: "CNIC",
+  student_id: "Student ID",
+  iban: "IBAN",
+  card: "Card number",
+  passport: "Passport number",
+  account_number: "Account number",
+  id_number: "ID number (SSN / licence / tax)",
+  password: "Password",
+  username: "Username",
+  person_name: "Person name",
+  address: "Address / location",
+  date_of_birth: "Date of birth",
+};
+const SCOPE_LABELS = { prompt: "Your question", chunk: "Document", history: "Chat history" };
+
+export const entityLabel = (type) => ENTITY_LABELS[type] || type;
+export const scopeLabel = (scope) => SCOPE_LABELS[scope] || scope;

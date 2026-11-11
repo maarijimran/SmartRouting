@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     # Per-user limits (requests per minute) for the expensive endpoints.
     chat_rate_per_min: int = 30
     upload_rate_per_min: int = 20
+    # PII detector: "patterns" (regex only) or "piiranha" (local transformer NER + regex).
+    # A configured-but-unloadable model fails closed (cloud blocked), never falls back.
+    pii_detector: str = "patterns"
+    pii_model_path: str = ""
+    pii_threshold: float = 0.5
+    pii_ignore_types: str = ""  # comma-separated SmartRoute entity types to ignore
+    pii_device: str = "auto"  # auto | cuda | cpu
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
