@@ -275,8 +275,11 @@ def qasper_items(path: Path, out: Path, limit: int = 360) -> list[EvalItem]:
 # --- privacy cases -------------------------------------------------------------------
 def _luhn_card(rng: random.Random) -> str:
     digits = [rng.randint(0, 9) for _ in range(15)]
+    # Luhn: from the right, the check digit (placeholder 0, index 0) is not doubled and every
+    # second digit after it is. (The old version doubled the wrong positions, so generated
+    # "cards" failed the checksum yet were labelled sensitive.)
     total = sum(
-        d if i % 2 else (d * 2 - 9 if d * 2 > 9 else d * 2)
+        (d * 2 - 9 if d * 2 > 9 else d * 2) if i % 2 else d
         for i, d in enumerate(reversed(digits + [0]))
     )
     check = (10 - total % 10) % 10

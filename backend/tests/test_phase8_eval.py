@@ -282,3 +282,14 @@ def test_ablations_and_error_analysis_run_and_are_labelled(dataset):
     rows = run_baselines(NAME, "sim", seeds=(0,), split="test")
     analysis = error_analysis(rows)
     assert "routes_by_policy" in analysis and analysis["abstention_reasons"]
+
+
+def test_synthetic_cards_are_luhn_valid_and_detected() -> None:
+    """Generated card numbers must pass Luhn, or 'sensitive' cases are mislabelled."""
+    from app.privacy.patterns import _luhn, find_pattern_entities
+
+    rng = random.Random(0)
+    for _ in range(200):
+        card = build_dataset._luhn_card(rng)
+        assert _luhn(card), card
+        assert [f.entity_type for f in find_pattern_entities(f"card {card} on file")] == ["card"]
